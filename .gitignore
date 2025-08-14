@@ -1,0 +1,6 @@
+*
+environments/automated/ci.yaml
+environments/skipper/spack.yaml
+environments/test/spack.yaml
+specs/global.yaml
+.gitignore

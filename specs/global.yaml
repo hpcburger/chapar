@@ -1,0 +1,81 @@
+# Package specifications for Spack environment
+spack:
+  # add package specs to the `specs` list
+  definitions:
+  - mpis: [openmpi, mpich, intel-oneapi-mpi]
+  - compilers: [gcc@8.5.0, gcc@11.4.1, intel-oneapi-compilers]
+  - oses: [os=rocky8, os=rocky9]
+  
+  specs:
+  # UCX with CUDA support
+  - matrix:
+    - [ucx@1.16.0+cuda+dc+rc+rdmacm+thread_multiple+ud+verbs+xpmem]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # Libfabric with CUDA support
+  - matrix:
+    - [libfabric@2.2.0 fabrics=mlx,verbs +cuda]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  - matrix:
+    - [libfabric@1.22.0 fabrics=mlx,verbs +cuda]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # OpenMPI optimized for UCX and libfabric
+  - matrix:
+    - [openmpi@4.1.6+cuda+cxx+cxx_exceptions+legacylaunchers+memchecker+pmi+pmix+thread_multiple fabrics=ucx,ofi schedulers=slurm ^ucx@1.16.0+cuda+dc+rc+rdmacm+thread_multiple+ud+verbs+xpmem ^libfabric@1.22.0 fabrics=mlx,verbs +cuda]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # MPICH optimized for UCX and libfabric
+  - matrix:
+    - [mpich@4.2.2+cuda+fortran+romio+slurm+verbs+libxml2 device=ch4 netmod=ofi,ucx pmi=pmi2 ^ucx@1.16.0+cuda+dc+rc+rdmacm+thread_multiple+ud+verbs+xpmem ^libfabric@1.22.0 fabrics=mlx,verbs +cuda]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # IPM with CUDA support
+  - matrix:
+    - [ipm+cuda+libunwind]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # General utilities
+  - matrix:
+    - [tmux, tcl, tk]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # Python versions
+  - matrix:
+    - [python@3.8.19+optimizations+tkinter, python@3.10.14+optimizations+tkinter, 
+       python@3.11.9+optimizations+tkinter, python@3.12.5+optimizations+tkinter]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # Python UV
+  - matrix:
+    - [py-uv]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # Rust
+  - matrix:
+    - [rust]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # Intel OneAPI MPI
+  - matrix:
+    - [intel-oneapi-mpi@2021.16.0+generic-names, intel-oneapi-mpi@2021.14.0+generic-names,
+       intel-oneapi-mpi@2021.10.0+generic-names]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    - [$oses]
+  
+  # Intel OneAPI Compilers
+  - matrix:
+    - [intel-oneapi-compilers@2025.2.0, intel-oneapi-compilers@2024.2.1,
+       intel-oneapi-compilers@2024.1.0, intel-oneapi-compilers@2023.1.0]
+    - ["%gcc@8.5.0", "%gcc@11.4.1"]
+    

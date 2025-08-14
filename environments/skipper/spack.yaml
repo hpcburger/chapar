@@ -1,0 +1,69 @@
+# This is a Spack Environment file.
+#
+# It describes a set of packages to be installed, along with
+# configuration settings.
+#
+spack:
+  config:
+    install_tree:
+      root: /share/base/bin  # Replace with your desired path
+    template_dir: /share/base/templates
+    build_stage: 
+    - /scratch/spack/$user/spack-stage
+    - /dev/shm/spack/$user/spack-stage  # RAM disk option
+    source_cache: /scratch/spack/cache/source
+    misc_cache: /scratch/spack/cache/misc
+    test_cache: /scratch/spack/cache/test
+    install_missing: true
+    # Ensure builds happen in the build_stage
+    build_jobs: 64  # Adjust based on your system
+    ccache: true
+    # Keep builds in memory/scratch during installation
+    keep_builds: false
+    
+  # Configure ccache to use fast storage
+  ccache:
+    cache_dir: /scratch/spack/ccache
+
+  # Include specs from separate file
+  include:
+  - ../specs/specs.yaml
+
+  packages:
+    mpi:
+      require: "intel-oneapi-mpi@2021.16.0"
+      
+  view: false
+  concretizer:
+    unify: when_possible
+    
+  compilers:
+  # GCC 8.5.0 - Default for Rocky Linux 8
+  - compiler:
+      spec: gcc@=8.5.0
+      paths:
+        cc: /usr/lib64/ccache/gcc
+        cxx: /usr/lib64/ccache/g++
+        f77: /usr/bin/gfortran
+        fc: /usr/bin/gfortran
+      flags: {}
+      operating_system: rocky8
+      target: x86_64
+      modules: []
+      environment: {}
+      extra_rpaths: []
+      
+  # GCC 11.4.1 - Default for Rocky Linux 9
+  - compiler:
+      spec: gcc@=11.4.1
+      paths:
+        cc: /usr/lib64/ccache/gcc
+        cxx: /usr/lib64/ccache/g++
+        f77: /usr/bin/gfortran
+        fc: /usr/bin/gfortran
+      flags: {}
+      operating_system: rocky9
+      target: x86_64
+      modules: []
+      environment: {}
+      extra_rpaths: []
