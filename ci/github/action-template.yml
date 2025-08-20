@@ -1,0 +1,208 @@
+# GitHub Actions Template Configuration
+# This file provides reusable templates and configurations for GitHub Actions workflows
+
+# Reusable workflow for Spack setup
+setup-spack: &setup-spack
+  name: Setup Spack
+  run: |
+    echo "Setting up Spack environment..."
+    ./ci/github/setup-spack.sh
+    source /tmp/setup-spack-env.sh
+
+# Reusable workflow for container builds
+build-container: &build-container
+  name: Build Container
+  run: |
+    echo "Building Apptainer container..."
+    ./ci/github/build-container.sh ${{ matrix.os }}
+
+# Common environment variables for all jobs
+common-env: &common-env
+  SPACK_ROOT: "/opt/spack"
+  SPACK_ENVIRONMENT: "skipper"
+  SPACK_BUILD_JOBS: "4"
+  SPACK_DISABLE_COMPILER_EXISTENCE_CHECK: "true"
+  APPTAINER_VERSION: "1.2.5"
+
+# Container image configurations
+container-images: &container-images
+  rocky8: "spack/rocky8-runner:latest"
+  rocky9: "spack/rocky9-runner:latest"
+  ubuntu: "spack/ubuntu-runner:latest"
+
+# Timeout configurations
+timeouts: &timeouts
+  short: 30      # 30 minutes
+  medium: 120    # 2 hours
+  long: 240      # 4 hours
+
+# Cache configurations for GitHub Actions
+cache-config: &cache-config
+  spack-source:
+    key: spack-source-${{ runner.os }}-${{ hashFiles('environments/*/spack.yaml', 'specs/*.yaml') }}
+    paths:
+      - /tmp/spack/cache/source
+    restore-keys: |
+      spack-source-${{ runner.os }}-
+      
+  spack-build:
+    key: spack-build-${{ runner.os }}-${{ hashFiles('environments/*/spack.lock') }}
+    paths:
+      - /tmp/spack/buildcache
+      - /tmp/spack/ccache
+    restore-keys: |
+      spack-build-${{ runner.os }}-
+
+# Artifact configurations
+artifacts: &artifacts
+  environment:
+    name: spack-environment
+    path: |
+      environments/${{ env.SPACK_ENVIRONMENT }}/spack.lock
+      environments/${{ env.SPACK_ENVIRONMENT }}/spack.yaml
+    retention-days: 7
+    
+  containers:
+    name: containers
+    path: containers/*.sif
+    retention-days: 14
+    
+  logs:
+    name: build-logs
+    path: |
+      logs/
+      test_logs/
+    retention-days: 3
+
+# Matrix configurations for different builds
+build-matrix: &build-matrix
+  os: [rocky8, rocky9]
+  compiler: [gcc, intel]
+  mpi: [openmpi, mpich, intel-mpi]
+  exclude:
+    - os: rocky9
+      compiler: gcc@8.5.0
+
+# Permission configurations
+permissions: &permissions
+  contents: read
+  packages: write
+  actions: read
+  security-events: write
+
+# GitHub Actions specific configurations
+github-actions:
+  # Workflow triggers
+  triggers:
+    push:
+      branches: [main, develop]
+      tags: ['v*']
+    pull_request:
+      branches: [main]
+      paths:
+        - 'environments/**'
+        - 'specs/**'
+        - 'containers/**'
+        - '.github/workflows/**'
+    schedule:
+      - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM
+    workflow_dispatch:
+      inputs:
+        build_containers:
+          description: 'Build containers'
+          required: false
+          default: 'true'
+          type: boolean
+  
+  # Concurrency control
+  concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+  
+  # Default job configuration
+  defaults:
+    run:
+      shell: bash
+    
+  # Security considerations
+  security:
+    secrets:
+      - SPACK_SIGNING_KEY
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+    
+    environment-protection:
+      production:
+        required-reviewers: 2
+        wait-timer: 5
+        
+  # Notification configurations
+  notifications:
+    slack:
+      webhook: ${{ secrets.SLACK_WEBHOOK }}
+      channel: "#hpc-ci"
+      on-success: false
+      on-failure: true
+      
+    email:
+      recipients: ["admin@hpcburger.com"]
+      on-success: false
+      on-failure: true
+
+# Example reusable composite action
+composite-actions:
+  setup-hpc-environment:
+    description: 'Setup HPC development environment with Spack'
+    inputs:
+      spack-version:
+        description: 'Spack version to use'
+        required: false
+        default: 'develop'
+      environment-name:
+        description: 'Spack environment name'
+        required: false
+        default: 'skipper'
+    runs:
+      using: 'composite'
+      steps:
+        - name: Setup Spack
+          shell: bash
+          run: |
+            export SPACK_VERSION=${{ inputs.spack-version }}
+            export SPACK_ENVIRONMENT=${{ inputs.environment-name }}
+            ./ci/github/setup-spack.sh
+            
+        - name: Activate Environment
+          shell: bash
+          run: |
+            source ${{ env.SPACK_ROOT }}/share/spack/setup-env.sh
+            spack env activate ${{ inputs.environment-name }}
+            spack env status
+
+# Debugging and troubleshooting
+debug:
+  enable-debug-logging: |
+    echo "ACTIONS_STEP_DEBUG=true" >> $GITHUB_ENV
+    echo "ACTIONS_RUNNER_DEBUG=true" >> $GITHUB_ENV
+    
+  show-environment: |
+    echo "=== Environment Information ==="
+    echo "GitHub Workspace: ${GITHUB_WORKSPACE}"
+    echo "GitHub Event: ${GITHUB_EVENT_NAME}"
+    echo "GitHub Ref: ${GITHUB_REF}"
+    echo "GitHub SHA: ${GITHUB_SHA}"
+    echo "Runner OS: ${RUNNER_OS}"
+    echo "Runner Arch: ${RUNNER_ARCH}"
+    
+  show-system-info: |
+    echo "=== System Information ==="
+    uname -a
+    df -h
+    free -h
+    nproc
+    
+  show-spack-info: |
+    echo "=== Spack Information ==="
+    spack --version
+    spack config get config
+    spack compiler list

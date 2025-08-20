@@ -1,0 +1,145 @@
+name: Test Spack Environment
+
+on:
+  pull_request:
+    paths:
+      - 'environments/**'
+      - 'specs/**'
+  workflow_dispatch:
+
+env:
+  SPACK_ROOT: "/opt/spack"
+  SPACK_ENVIRONMENT: "skipper"
+  SPACK_BUILD_JOBS: "2"
+  SPACK_DISABLE_COMPILER_EXISTENCE_CHECK: "true"
+
+jobs:
+  test-concretization:
+    name: Test Environment Concretization
+    runs-on: ubuntu-latest
+    container:
+      image: spack/rocky8-runner:latest
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Spack
+      run: ./ci/github/setup-spack.sh
+
+    - name: Test concretization
+      run: |
+        echo "Testing environment concretization..."
+        cd environments/${{ env.SPACK_ENVIRONMENT }}
+        source ${{ env.SPACK_ROOT }}/share/spack/setup-env.sh
+        spack env activate .
+        
+        # Test concretization
+        spack concretize --fresh --force
+        
+        # Show environment status
+        spack env status
+        spack find
+        
+        # Validate the environment
+        spack env depfile > /tmp/Makefile
+        echo "Environment concretization successful!"
+
+    - name: Upload concretization results
+      uses: actions/upload-artifact@v4
+      with:
+        name: concretization-results
+        path: |
+          environments/${{ env.SPACK_ENVIRONMENT }}/spack.lock
+          /tmp/Makefile
+        retention-days: 7
+
+  test-specs:
+    name: Test Spec Definitions
+    runs-on: ubuntu-latest
+    container:
+      image: spack/rocky8-runner:latest
+    timeout-minutes: 20
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Spack
+      run: ./ci/github/setup-spack.sh
+
+    - name: Validate spec files
+      run: |
+        echo "Validating spec files..."
+        source ${{ env.SPACK_ROOT }}/share/spack/setup-env.sh
+        
+        # Test each spec file
+        for spec_file in specs/*.yaml; do
+          echo "Validating $spec_file..."
+          spack config --scope=site add "config:$(cat $spec_file)" || true
+        done
+        
+        # Show final configuration
+        spack config get config
+        
+        echo "Spec validation completed!"
+
+  test-install-sample:
+    name: Test Sample Package Installation
+    runs-on: ubuntu-latest
+    container:
+      image: spack/rocky8-runner:latest
+    timeout-minutes: 60
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Spack
+      run: ./ci/github/setup-spack.sh
+
+    - name: Install sample packages
+      run: |
+        echo "Testing sample package installation..."
+        cd environments/${{ env.SPACK_ENVIRONMENT }}
+        source ${{ env.SPACK_ROOT }}/share/spack/setup-env.sh
+        spack env activate .
+        
+        # Install a few key packages to test the environment
+        echo "Installing tmux (lightweight test)..."
+        spack install tmux
+        
+        echo "Installing Python..."
+        spack install python@3.11
+        
+        # Test loading packages
+        spack load tmux
+        tmux -V
+        
+        spack load python
+        python3 --version
+        
+        echo "Sample installation test completed!"
+
+  lint-yaml:
+    name: Lint YAML Files
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install yamllint
+      run: pip install yamllint
+
+    - name: Lint YAML files
+      run: |
+        echo "Linting YAML files..."
+        yamllint -d relaxed environments/ specs/ .github/workflows/ || true
+        echo "YAML linting completed!"

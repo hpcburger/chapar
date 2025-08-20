@@ -1,0 +1,63 @@
+# GitHub Actions Environment Variables Configuration
+# This file contains all environment variables needed for Spack CI and container builds
+# These should be set as repository secrets and variables in GitHub
+
+# Spack Configuration
+env:
+  SPACK_ROOT: "/opt/spack"
+  SPACK_ENVIRONMENT: "skipper"
+  SPACK_INSTALL_ROOT: "/opt/spack/opt/spack"
+  SPACK_BUILD_STAGE: "/tmp/spack-stage"
+  SPACK_BUILD_STAGE_RAM: "/dev/shm/spack-stage"
+  SPACK_SOURCE_CACHE: "/tmp/spack/cache/source"
+  SPACK_MISC_CACHE: "/tmp/spack/cache/misc"
+  SPACK_TEST_CACHE: "/tmp/spack/cache/test"
+  SPACK_CCACHE_DIR: "/tmp/spack/ccache"
+  SPACK_BUILD_JOBS: "4"
+  SPACK_TEMPLATE_DIR: "/opt/spack/share/spack/templates"
+  
+  # Spack CI Configuration
+  SPACK_CI_STACK_NAME: "hpc-skipper"
+  SPACK_PIPELINE_TYPE: "spack_pull_request"
+  SPACK_PRUNE_UNTOUCHED: "true"
+  SPACK_PRUNE_UP_TO_DATE: "true"
+  SPACK_REBUILD_EVERYTHING: "false"
+  SPACK_REQUIRE_SIGNING: "false"
+  SPACK_DISABLE_COMPILER_EXISTENCE_CHECK: "true"
+  
+  # Container Configuration
+  CONTAINER_REGISTRY: "ghcr.io"
+  CONTAINER_IMAGE_PREFIX: "ghcr.io/${{ github.repository_owner }}/hpc-spack"
+  CONTAINER_TAG: "${{ github.ref_name }}"
+  CONTAINER_BASE_OS: "rocky8"
+  APPTAINER_VERSION: "1.2.5"
+  SINGULARITY_VERSION: "3.11.4"
+  
+  # Build Configuration
+  BASE_IMAGE: "rockylinux:8"
+  BUILDER_IMAGE: "spack/rocky8-runner:latest"
+  
+  # Cache Configuration
+  SPACK_CACHE_BUCKET: "spack-cache"
+  BUILDCACHE_DESTINATION: "file:///tmp/spack/buildcache"
+  
+  # Pipeline Configuration
+  PIPELINE_TIMEOUT: "240"  # 4 hours in minutes
+  JOB_TIMEOUT: "120"       # 2 hours in minutes
+  PARALLEL_BUILDS: "4"
+  MAX_PARALLEL_JOBS: "10"
+  
+  # Rocky Linux specific
+  ROCKY_VERSION: "8"
+  ROCKY_MIRROR: "https://download.rockylinux.org/pub/rocky"
+  
+  # Development/Debug flags
+  SPACK_DEBUG: "false"
+  SPACK_VERBOSE: "false"
+  CI_DEBUG: "false"
+
+# GitHub Secrets that need to be set in repository settings:
+# SPACK_SIGNING_KEY - GPG key for package signing (optional)
+# AWS_ACCESS_KEY_ID - For S3-based build cache (optional)
+# AWS_SECRET_ACCESS_KEY - For S3-based build cache (optional)
+# GHCR_TOKEN - GitHub Container Registry token (auto-provided as GITHUB_TOKEN)
