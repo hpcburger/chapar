@@ -1,6 +1,51 @@
-*
-environments/automated/ci.yaml
-environments/skipper/spack.yaml
-environments/test/spack.yaml
-specs/global.yaml
-.gitignore
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Spack build artifacts and caches
+spack-stage/
+.spack/
+**/spack-stage/
+**/cache/
+**/ccache/
+
+# Container build artifacts
+containers/*.sif
+containers/*.img
+containers/cache/
+containers/tmp/
+
+# Temporary and log files
+*.log
+*.tmp
+*.temp
+/tmp/
+build/
+dist/
+
+# Python artifacts (if any)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# Backup files
+*.bak
+*.backup
+*.orig

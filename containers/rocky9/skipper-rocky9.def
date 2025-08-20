@@ -1,0 +1,160 @@
+Bootstrap: docker
+From: rockylinux:9
+
+%help
+    HPC Software Stack based on Spack - Rocky Linux 9
+    Built from the skipper environment configuration
+    
+    Includes:
+    - Spack package manager
+    - OpenMPI, MPICH, Intel OneAPI MPI
+    - UCX and libfabric with CUDA support
+    - Python 3.8-3.12 with optimizations
+    - GCC 8.5.0 and 11.4.1 compilers
+    - Intel OneAPI compilers
+    - Development tools and utilities
+
+%labels
+    Author HPC Burger Team
+    Version 1.0
+    OS rocky9
+    Spack_Environment skipper
+
+%environment
+    # Spack environment variables
+    export SPACK_ROOT=/opt/spack
+    export PATH="$SPACK_ROOT/bin:$PATH"
+    export SPACK_INSTALL_ROOT=/opt/spack/opt/spack
+    export SPACK_BUILD_STAGE=/tmp/spack-stage
+    export SPACK_BUILD_STAGE_RAM=/dev/shm/spack-stage
+    export SPACK_SOURCE_CACHE=/opt/spack/var/spack/cache/source
+    export SPACK_MISC_CACHE=/opt/spack/var/spack/cache/misc
+    export SPACK_TEST_CACHE=/opt/spack/var/spack/cache/test
+    export SPACK_CCACHE_DIR=/opt/spack/var/spack/ccache
+    export SPACK_BUILD_JOBS=8
+    
+    # Enable Spack shell support
+    if [ -f "$SPACK_ROOT/share/spack/setup-env.sh" ]; then
+        source "$SPACK_ROOT/share/spack/setup-env.sh"
+    fi
+
+%post
+    # Update system and install basic dependencies
+    dnf update -y
+    dnf groupinstall -y "Development Tools"
+    dnf install -y \
+        wget curl git \
+        gcc gcc-c++ gcc-gfortran \
+        make cmake autoconf automake libtool \
+        bzip2 gzip tar unzip \
+        which file patch \
+        python3 python3-pip \
+        ccache \
+        environment-modules \
+        infiniband-diags \
+        libibverbs-devel \
+        librdmacm-devel \
+        numactl-devel \
+        pciutils-devel \
+        libnl3-devel \
+        zlib-devel \
+        openssl-devel \
+        libxml2-devel \
+        hwloc-devel \
+        libevent-devel
+
+    # Install CUDA development tools (optional - comment out if not needed)
+    # dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo
+    # dnf install -y cuda-toolkit-12-0
+
+    # Create spack user and directories
+    useradd -m -s /bin/bash spack
+    mkdir -p /opt/spack
+    chown -R spack:spack /opt/spack
+    
+    # Switch to spack user for installation
+    su - spack << 'EOF'
+        # Clone Spack
+        cd /opt
+        git clone --depth=1 https://github.com/spack/spack.git
+        cd spack
+        
+        # Initialize Spack
+        source share/spack/setup-env.sh
+        
+        # Configure Spack directories
+        mkdir -p var/spack/cache/{source,misc,test}
+        mkdir -p var/spack/ccache
+        mkdir -p /tmp/spack-stage
+        mkdir -p /dev/shm/spack-stage || true
+        
+        # Copy environment configuration
+        mkdir -p /opt/spack-config
+EOF
+    
+    # Copy our Spack configuration into the container
+    # Note: This assumes the container is built from the repo root
+    cp -r specs /opt/spack-config/
+    cp -r environments /opt/spack-config/
+    chown -R spack:spack /opt/spack-config
+    
+    # Continue as spack user
+    su - spack << 'EOF'
+        source /opt/spack/share/spack/setup-env.sh
+        
+        # Link our configuration
+        ln -sf /opt/spack-config/specs /opt/spack/specs
+        ln -sf /opt/spack-config/environments /opt/spack/environments
+        
+        # Add compilers
+        spack compiler find
+        
+        # Activate skipper environment
+        cd /opt/spack/environments/skipper
+        spack env activate .
+        
+        # Concretize the environment
+        spack concretize -f
+        
+        # Install packages (this will take a long time!)
+        # For faster builds, you might want to use a binary cache
+        spack install --fail-fast -j ${SPACK_BUILD_JOBS:-8}
+        
+        # Generate environment modules
+        spack module tcl refresh -y
+        
+        # Clean up build artifacts
+        spack clean -a
+EOF
+
+    # Clean up package cache
+    dnf clean all
+    rm -rf /var/cache/dnf/*
+
+%runscript
+    # Default: activate spack environment and start bash
+    source /opt/spack/share/spack/setup-env.sh
+    spack env activate /opt/spack/environments/skipper
+    exec "$@"
+
+%test
+    # Basic functionality tests
+    source /opt/spack/share/spack/setup-env.sh
+    spack env activate /opt/spack/environments/skipper
+    
+    # Test that spack is working
+    spack --version
+    
+    # Test that we can find installed packages
+    spack find
+    
+    # Test that we can load MPI
+    spack load openmpi || spack load mpich || spack load intel-oneapi-mpi
+    mpirun --version || mpiexec --version || echo "MPI test skipped"
+    
+    # Test Python
+    spack load python
+    python3 --version
+    python3 -c "import sys; print('Python paths:', sys.path)"
+    
+    echo "Container tests completed successfully!"

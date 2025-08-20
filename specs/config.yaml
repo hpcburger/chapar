@@ -1,0 +1,18 @@
+config:
+  install_tree:
+    root: ${SPACK_INSTALL_ROOT:-/share/base/bin}
+  template_dir: ${SPACK_TEMPLATE_DIR:-/share/base/templates}
+  build_stage: 
+  - ${SPACK_BUILD_STAGE:-/scratch/spack/$user/spack-stage}
+  - ${SPACK_BUILD_STAGE_RAM:-/dev/shm/spack/$user/spack-stage}
+  source_cache: ${SPACK_SOURCE_CACHE:-/scratch/spack/cache/source}
+  misc_cache: ${SPACK_MISC_CACHE:-/scratch/spack/cache/misc}
+  test_cache: ${SPACK_TEST_CACHE:-/scratch/spack/cache/test}
+  install_missing: true
+  build_jobs: ${SPACK_BUILD_JOBS:-64}
+  ccache: true
+  keep_builds: false
+
+# Configure ccache to use fast storage
+ccache:
+  cache_dir: ${SPACK_CCACHE_DIR:-/scratch/spack/ccache}
