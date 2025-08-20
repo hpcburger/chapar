@@ -1,0 +1,118 @@
+# Spack CI Template Configuration
+# This file provides templates and configuration for Spack CI jobs
+
+# Include variables
+include:
+  - local: 'ci/gitlab/variables.yml'
+
+# Job templates for different platforms
+.spack_job_template: &spack_job_template
+  variables:
+    SPACK_CONCRETE_ENV_DIR: ${CI_PROJECT_DIR}/jobs_scratch_dir/${CI_JOB_NAME}
+  before_script:
+    - echo "Setting up Spack job environment..."
+    - export SPACK_ROOT=${SPACK_ROOT}
+    - export PATH="${SPACK_ROOT}/bin:${PATH}"
+    - source ${SPACK_ROOT}/share/spack/setup-env.sh
+    - cd ${SPACK_CONCRETE_ENV_DIR}
+    - spack env activate --without-view .
+    - spack concretize -f
+  script:
+    - spack install --fail-fast --verbose --keep-stage
+  after_script:
+    - spack clean -a
+  artifacts:
+    paths:
+      - ${SPACK_CONCRETE_ENV_DIR}
+    when: always
+    expire_in: 3 days
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+  timeout: ${JOB_TIMEOUT}
+
+# Rocky Linux 8 job template
+.rocky8_job: &rocky8_job
+  <<: *spack_job_template
+  image: registry.spack.io/spack/rocky8-runner:latest
+  tags:
+    - spack
+    - rocky8
+  variables:
+    SPACK_TARGET_PLATFORM: "rocky8"
+
+# Rocky Linux 9 job template  
+.rocky9_job: &rocky9_job
+  <<: *spack_job_template
+  image: registry.spack.io/spack/rocky9-runner:latest
+  tags:
+    - spack
+    - rocky9
+  variables:
+    SPACK_TARGET_PLATFORM: "rocky9"
+
+# Compiler-specific templates
+.gcc8_job: &gcc8_job
+  variables:
+    SPACK_COMPILER: "gcc@8.5.0"
+
+.gcc11_job: &gcc11_job
+  variables:
+    SPACK_COMPILER: "gcc@11.4.1"
+
+.intel_job: &intel_job
+  variables:
+    SPACK_COMPILER: "intel-oneapi-compilers"
+
+# Build cache templates
+.with_buildcache: &with_buildcache
+  variables:
+    SPACK_BUILDCACHE_DESTINATION: ${BUILDCACHE_DESTINATION}
+  before_script:
+    - !reference [.spack_job_template, before_script]
+    - spack mirror add buildcache ${SPACK_BUILDCACHE_DESTINATION}
+    - spack buildcache keys --install --trust
+  after_script:
+    - spack buildcache create --allow-root --unsigned ${SPACK_BUILDCACHE_DESTINATION}
+    - !reference [.spack_job_template, after_script]
+
+# Security and signing templates
+.signed_job: &signed_job
+  variables:
+    SPACK_SIGNING_KEY: ${SPACK_SIGNING_KEY}
+  before_script:
+    - !reference [.spack_job_template, before_script]
+    - echo "Setting up GPG signing..."
+    - gpg --import ${SPACK_SIGNING_KEY} || true
+  after_script:
+    - spack buildcache create --allow-root ${SPACK_BUILDCACHE_DESTINATION}
+    - !reference [.spack_job_template, after_script]
+
+# Protected job template (for sensitive builds)
+.protected_job: &protected_job
+  <<: *spack_job_template
+  tags:
+    - spack
+    - protected
+  rules:
+    - if: $CI_COMMIT_REF_PROTECTED == "true"
+
+# Development job template (for testing)
+.develop_job: &develop_job
+  <<: *spack_job_template
+  variables:
+    SPACK_DISABLE_COMPILER_EXISTENCE_CHECK: "true"
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+
+# Production job template
+.production_job: &production_job
+  <<: *spack_job_template
+  <<: *with_buildcache
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG

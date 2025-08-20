@@ -18,3 +18,48 @@ spack:
   view: false
   concretizer:
     unify: when_possible
+    
+  # CI/CD Configuration
+  ci:
+    pipeline-gen:
+      - submapping:
+        - match: ['%gcc@8.5.0']
+          build-job:
+            image: "registry.spack.io/spack/rocky8-runner:latest"
+            tags: ["spack", "rocky8"]
+            variables:
+              SPACK_TARGET_PLATFORM: "rocky8"
+        - match: ['%gcc@11.4.1'] 
+          build-job:
+            image: "registry.spack.io/spack/rocky8-runner:latest"
+            tags: ["spack", "rocky8"]
+            variables:
+              SPACK_TARGET_PLATFORM: "rocky8"
+        - match: ['os=rocky8']
+          build-job:
+            image: "registry.spack.io/spack/rocky8-runner:latest"
+            tags: ["spack", "rocky8"]
+            variables:
+              SPACK_TARGET_PLATFORM: "rocky8"
+        - match: ['os=rocky9']
+          build-job:
+            image: "registry.spack.io/spack/rocky9-runner:latest"
+            tags: ["spack", "rocky9"]
+            variables:
+              SPACK_TARGET_PLATFORM: "rocky9"
+    
+    # Build cache and artifact settings
+    rebuild-index: true
+    broken-specs-url: "https://broken-specs"
+    
+    # CDash integration (optional)
+    enable-artifacts-buildcache: true
+    
+    # Security settings
+    signing-job-attributes:
+      image: "registry.spack.io/spack/notary:latest"
+      tags: ["spack", "aws", "protected"]
+      script:
+        - aws s3 sync --exclude "*" --include "*spec.json*" ${SPACK_REMOTE_MIRROR_URL} /tmp
+        - /sign.sh
+        - aws s3 sync --exclude "*" --include "*spec.json.sig*" /tmp ${SPACK_REMOTE_MIRROR_URL}

@@ -1,0 +1,65 @@
+# GitLab CI/CD Environment Variables Configuration
+# This file contains all environment variables needed for Spack CI and container builds
+# Include this file in other CI configurations as needed
+
+variables:
+  # Spack Configuration
+  SPACK_ROOT: "/opt/spack"
+  SPACK_ENVIRONMENT: "skipper"
+  SPACK_INSTALL_ROOT: "/opt/spack/opt/spack"
+  SPACK_BUILD_STAGE: "/tmp/spack-stage"
+  SPACK_BUILD_STAGE_RAM: "/dev/shm/spack-stage"
+  SPACK_SOURCE_CACHE: "/cache/spack/source"
+  SPACK_MISC_CACHE: "/cache/spack/misc"
+  SPACK_TEST_CACHE: "/cache/spack/test"
+  SPACK_CCACHE_DIR: "/cache/spack/ccache"
+  SPACK_BUILD_JOBS: "8"
+  SPACK_TEMPLATE_DIR: "/opt/spack/share/spack/templates"
+  
+  # Spack CI Configuration
+  SPACK_CI_STACK_NAME: "hpc-skipper"
+  SPACK_PIPELINE_TYPE: "spack_pull_request"
+  SPACK_PRUNE_UNTOUCHED: "true"
+  SPACK_PRUNE_UP_TO_DATE: "true"
+  SPACK_REBUILD_EVERYTHING: "false"
+  SPACK_REQUIRE_SIGNING: "false"
+  SPACK_DISABLE_COMPILER_EXISTENCE_CHECK: "true"
+  
+  # Container Configuration
+  CONTAINER_REGISTRY: "${CI_REGISTRY}"
+  CONTAINER_IMAGE_PREFIX: "${CI_REGISTRY_IMAGE}/hpc-spack"
+  CONTAINER_TAG: "${CI_COMMIT_REF_SLUG}"
+  CONTAINER_BASE_OS: "rocky8"
+  APPTAINER_VERSION: "1.2.5"
+  SINGULARITY_VERSION: "3.11.4"
+  
+  # Build Configuration
+  BASE_IMAGE: "rockylinux:8"
+  BUILDER_IMAGE: "registry.spack.io/spack/rocky8-runner:latest"
+  DOCKER_DRIVER: "overlay2"
+  DOCKER_TLS_CERTDIR: "/certs"
+  
+  # Cache Configuration
+  SPACK_CACHE_BUCKET: "spack-cache"
+  SPACK_CACHE_REGION: "us-east-1"
+  BUILDCACHE_DESTINATION: "file:///cache/spack/buildcache"
+  
+  # Pipeline Configuration
+  PIPELINE_TIMEOUT: "4h"
+  JOB_TIMEOUT: "2h"
+  PARALLEL_BUILDS: "4"
+  MAX_PARALLEL_JOBS: "10"
+  
+  # Security and Access
+  SPACK_SIGNING_KEY: ""  # Set in GitLab CI/CD settings
+  AWS_ACCESS_KEY_ID: ""  # Set in GitLab CI/CD settings if using S3
+  AWS_SECRET_ACCESS_KEY: ""  # Set in GitLab CI/CD settings if using S3
+  
+  # Rocky Linux specific
+  ROCKY_VERSION: "8"
+  ROCKY_MIRROR: "https://download.rockylinux.org/pub/rocky"
+  
+  # Development/Debug flags
+  SPACK_DEBUG: "false"
+  SPACK_VERBOSE: "false"
+  CI_DEBUG: "false"

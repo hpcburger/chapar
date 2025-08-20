@@ -1,0 +1,331 @@
+# GitLab CI/CD Pipeline for HPC Spack Environment
+# 
+# This pipeline builds the skipper Spack environment using Spack CI
+# and creates Apptainer containers for HPC deployment
+
+# Include centralized variables
+include:
+  - local: 'ci/gitlab/variables.yml'
+
+# Pipeline stages
+stages:
+  - prepare
+  - generate
+  - build-packages
+  - build-containers
+  - test
+  - deploy
+
+# Global settings
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# Default configuration for all jobs
+default:
+  image: ${BUILDER_IMAGE}
+  timeout: ${JOB_TIMEOUT}
+  interruptible: true
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+# Cache configuration
+.cache_template: &cache_template
+  cache:
+    key: spack-cache-${CI_COMMIT_REF_SLUG}
+    paths:
+      - cache/spack/
+      - /opt/spack/var/spack/cache/
+    policy: pull-push
+
+# Before script for Spack setup
+.spack_setup: &spack_setup
+  before_script:
+    - echo "Setting up Spack environment..."
+    - export SPACK_ROOT=${SPACK_ROOT}
+    - export PATH="${SPACK_ROOT}/bin:${PATH}"
+    - mkdir -p ${SPACK_SOURCE_CACHE} ${SPACK_MISC_CACHE} ${SPACK_TEST_CACHE} ${SPACK_CCACHE_DIR}
+    - mkdir -p ${SPACK_BUILD_STAGE} ${SPACK_BUILD_STAGE_RAM} || true
+    - |
+      if [ ! -d "${SPACK_ROOT}" ]; then
+        git clone --depth=1 https://github.com/spack/spack.git ${SPACK_ROOT}
+      fi
+    - source ${SPACK_ROOT}/share/spack/setup-env.sh
+    - spack --version
+    - spack compiler find
+    - echo "Spack setup complete"
+
+# =============================================================================
+# PREPARE STAGE
+# =============================================================================
+
+prepare:
+  stage: prepare
+  <<: *cache_template
+  <<: *spack_setup
+  script:
+    - echo "Preparing Spack environment and dependencies..."
+    - cd environments/${SPACK_ENVIRONMENT}
+    - spack env activate .
+    - spack concretize --fresh --force
+    - spack env status
+    - echo "Environment preparation complete"
+  artifacts:
+    paths:
+      - environments/${SPACK_ENVIRONMENT}/spack.lock
+    expire_in: 1 day
+  rules:
+    - changes:
+        - environments/${SPACK_ENVIRONMENT}/**/*
+        - specs/**/*
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# =============================================================================
+# GENERATE STAGE - Create Spack CI pipeline
+# =============================================================================
+
+generate:
+  stage: generate
+  <<: *spack_setup
+  dependencies:
+    - prepare
+  script:
+    - echo "Generating Spack CI pipeline..."
+    - cd environments/${SPACK_ENVIRONMENT}
+    - spack env activate .
+    - |
+      # Generate the child pipeline for package builds
+      spack ci generate \
+        --output-file ${CI_PROJECT_DIR}/spack-pipeline.yml \
+        --artifacts-root ${CI_PROJECT_DIR}/jobs_scratch_dir \
+        --buildcache-destination ${BUILDCACHE_DESTINATION}
+    - echo "Generated pipeline file:"
+    - cat ${CI_PROJECT_DIR}/spack-pipeline.yml | head -50
+  artifacts:
+    paths:
+      - spack-pipeline.yml
+      - jobs_scratch_dir/
+    expire_in: 1 day
+  rules:
+    - changes:
+        - environments/${SPACK_ENVIRONMENT}/**/*
+        - specs/**/*
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# =============================================================================
+# SPACK CI CHILD PIPELINE - Build packages
+# =============================================================================
+
+spack-ci-pipeline:
+  stage: build-packages
+  trigger:
+    include:
+      - artifact: spack-pipeline.yml
+        job: generate
+    strategy: depend
+  dependencies:
+    - generate
+  rules:
+    - changes:
+        - environments/${SPACK_ENVIRONMENT}/**/*
+        - specs/**/*
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# =============================================================================
+# CONTAINER BUILD STAGE
+# =============================================================================
+
+.container_build_template: &container_build_template
+  stage: build-containers
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - echo "Setting up container build environment..."
+    - apk add --no-cache curl bash git
+    - |
+      # Install Apptainer
+      curl -s https://raw.githubusercontent.com/apptainer/apptainer/main/tools/install-unprivileged.sh | bash -s - /usr/local
+      export PATH="/usr/local/bin:${PATH}"
+    - docker info
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  after_script:
+    - docker logout $CI_REGISTRY
+
+build-rocky8-container:
+  <<: *container_build_template
+  script:
+    - echo "Building Rocky Linux 8 Apptainer container..."
+    - cd containers
+    - |
+      # Build the container
+      apptainer build \
+        --fakeroot \
+        --tmpdir /tmp \
+        hpc-spack-skipper-rocky8.sif \
+        rocky8/skipper-rocky8.def
+    - ls -la *.sif
+    - |
+      # Test the container
+      apptainer test hpc-spack-skipper-rocky8.sif
+    - |
+      # Convert to Docker format and push to registry
+      docker import hpc-spack-skipper-rocky8.sif ${CONTAINER_IMAGE_PREFIX}-rocky8:${CONTAINER_TAG}
+      docker tag ${CONTAINER_IMAGE_PREFIX}-rocky8:${CONTAINER_TAG} ${CONTAINER_IMAGE_PREFIX}-rocky8:latest
+      docker push ${CONTAINER_IMAGE_PREFIX}-rocky8:${CONTAINER_TAG}
+      docker push ${CONTAINER_IMAGE_PREFIX}-rocky8:latest
+  artifacts:
+    paths:
+      - containers/*.sif
+    expire_in: 1 week
+  dependencies:
+    - spack-ci-pipeline
+  rules:
+    - changes:
+        - containers/**/*
+        - environments/${SPACK_ENVIRONMENT}/**/*
+        - specs/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  tags:
+    - docker
+
+build-rocky9-container:
+  <<: *container_build_template
+  script:
+    - echo "Building Rocky Linux 9 Apptainer container..."
+    - cd containers
+    - |
+      # Build the container
+      apptainer build \
+        --fakeroot \
+        --tmpdir /tmp \
+        hpc-spack-skipper-rocky9.sif \
+        rocky9/skipper-rocky9.def
+    - ls -la *.sif
+    - |
+      # Test the container
+      apptainer test hpc-spack-skipper-rocky9.sif
+    - |
+      # Convert to Docker format and push to registry
+      docker import hpc-spack-skipper-rocky9.sif ${CONTAINER_IMAGE_PREFIX}-rocky9:${CONTAINER_TAG}
+      docker tag ${CONTAINER_IMAGE_PREFIX}-rocky9:${CONTAINER_TAG} ${CONTAINER_IMAGE_PREFIX}-rocky9:latest
+      docker push ${CONTAINER_IMAGE_PREFIX}-rocky9:${CONTAINER_TAG}
+      docker push ${CONTAINER_IMAGE_PREFIX}-rocky9:latest
+  artifacts:
+    paths:
+      - containers/*.sif
+    expire_in: 1 week
+  dependencies:
+    - spack-ci-pipeline
+  rules:
+    - changes:
+        - containers/**/*
+        - environments/${SPACK_ENVIRONMENT}/**/*
+        - specs/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  tags:
+    - docker
+  when: manual  # Rocky 9 builds manually for now
+
+# =============================================================================
+# TEST STAGE
+# =============================================================================
+
+test-containers:
+  stage: test
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  before_script:
+    - apk add --no-cache curl bash
+    - curl -s https://raw.githubusercontent.com/apptainer/apptainer/main/tools/install-unprivileged.sh | bash -s - /usr/local
+    - export PATH="/usr/local/bin:${PATH}"
+  script:
+    - echo "Testing built containers..."
+    - cd containers
+    - |
+      # Test Rocky 8 container
+      if [ -f "hpc-spack-skipper-rocky8.sif" ]; then
+        echo "Testing Rocky 8 container..."
+        apptainer exec hpc-spack-skipper-rocky8.sif spack --version
+        apptainer exec hpc-spack-skipper-rocky8.sif spack find
+        apptainer exec hpc-spack-skipper-rocky8.sif bash -c "source /opt/spack/share/spack/setup-env.sh && spack env activate /opt/spack/environments/skipper && spack load openmpi && mpirun --version"
+      fi
+    - |
+      # Test Rocky 9 container
+      if [ -f "hpc-spack-skipper-rocky9.sif" ]; then
+        echo "Testing Rocky 9 container..."
+        apptainer exec hpc-spack-skipper-rocky9.sif spack --version
+        apptainer exec hpc-spack-skipper-rocky9.sif spack find
+        apptainer exec hpc-spack-skipper-rocky9.sif bash -c "source /opt/spack/share/spack/setup-env.sh && spack env activate /opt/spack/environments/skipper && spack load openmpi && mpirun --version"
+      fi
+  dependencies:
+    - build-rocky8-container
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  tags:
+    - docker
+
+# =============================================================================
+# DEPLOY STAGE
+# =============================================================================
+
+deploy-containers:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl bash
+  script:
+    - echo "Deploying containers to registry..."
+    - echo "Container images available at:"
+    - echo "  Rocky 8: ${CONTAINER_IMAGE_PREFIX}-rocky8:${CONTAINER_TAG}"
+    - echo "  Rocky 9: ${CONTAINER_IMAGE_PREFIX}-rocky9:${CONTAINER_TAG}"
+    - |
+      # Create deployment manifest
+      cat > deployment-manifest.json << EOF
+      {
+        "version": "${CI_COMMIT_SHA}",
+        "tag": "${CONTAINER_TAG}",
+        "containers": {
+          "rocky8": "${CONTAINER_IMAGE_PREFIX}-rocky8:${CONTAINER_TAG}",
+          "rocky9": "${CONTAINER_IMAGE_PREFIX}-rocky9:${CONTAINER_TAG}"
+        },
+        "spack_environment": "${SPACK_ENVIRONMENT}",
+        "build_date": "$(date -Iseconds)",
+        "pipeline_url": "${CI_PIPELINE_URL}"
+      }
+      EOF
+    - cat deployment-manifest.json
+  artifacts:
+    paths:
+      - deployment-manifest.json
+    expire_in: 30 days
+  dependencies:
+    - test-containers
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  when: manual
+
+# =============================================================================
+# CLEANUP JOBS
+# =============================================================================
+
+cleanup-cache:
+  stage: deploy
+  script:
+    - echo "Cleaning up old cache entries..."
+    - find cache/spack/ -type f -mtime +7 -delete || true
+    - du -sh cache/spack/ || true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  when: manual

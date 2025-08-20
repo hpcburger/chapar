@@ -91,11 +91,32 @@ module load openmpi/4.1.6
   - Example of a host-scoped configuration with the same shared specs.
   - Tune `install_tree`, caches, and compiler targets for your production nodes.
 
-## Automation (WIP)
-- `environments/automated/ci.yaml` is a stub for wiring CI (GitHub Actions, GitLab CI, Jenkins, etc.). Typical jobs:
-  - Concretization check for PRs.
-  - Selective rebuilds by environment.
-  - Artifact publishing (binary caches) and module regeneration.
+## CI/CD Automation
+Complete GitLab CI/CD pipeline using Spack CI for automated builds and container generation:
+
+### Pipeline Features
+- **Spack CI Integration**: Dynamic pipeline generation for package builds
+- **Apptainer Containers**: Automated container builds for Rocky Linux 8/9
+- **Build Cache**: Optimized caching for faster rebuilds
+- **Multi-platform**: Support for different OS and compiler combinations
+- **Testing**: Automated validation of built environments and containers
+
+### Pipeline Stages
+1. **Prepare**: Environment setup and concretization
+2. **Generate**: Dynamic Spack CI pipeline creation  
+3. **Build Packages**: Parallel package compilation with Spack CI
+4. **Build Containers**: Apptainer container creation
+5. **Test**: Functionality validation
+6. **Deploy**: Container registry publishing
+
+### Configuration Files
+- `.gitlab-ci.yml`: Main pipeline configuration
+- `ci/gitlab/variables.yml`: Centralized environment variables
+- `ci/gitlab/setup-spack.sh`: Spack initialization script
+- `ci/gitlab/build-container.sh`: Container build automation
+- `environments/skipper/spack.yaml`: Updated with CI configuration
+
+See `ci/README.md` for detailed CI/CD documentation.
 
 ## Troubleshooting
 - **Permission issues**: Point `install_tree.root` and caches to user-writable locations.

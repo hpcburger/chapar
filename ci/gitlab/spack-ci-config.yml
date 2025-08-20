@@ -1,0 +1,231 @@
+# Spack CI Configuration for GitLab
+# This file contains specific configuration for Spack CI integration
+
+# Spack CI specific variables
+variables:
+  # Pipeline generation settings
+  SPACK_CI_PIPELINE_GEN: "true"
+  SPACK_CI_STACK_NAME: "hpc-skipper"
+  SPACK_CI_SHARED_PR_MIRROR: "true"
+  SPACK_CI_OPTIMIZE_FOR_GITLAB: "true"
+  
+  # Build settings
+  SPACK_CI_ENABLE_ARTIFACTS_BUILDCACHE: "true"
+  SPACK_CI_REBUILD_INDEX: "true"
+  SPACK_CI_PRUNE_UNTOUCHED: "true"
+  SPACK_CI_PRUNE_UP_TO_DATE: "true"
+  
+  # Security settings
+  SPACK_CI_REQUIRE_SIGNING: "false"  # Set to true in production
+  SPACK_CI_DISABLE_COMPILER_EXISTENCE_CHECK: "true"
+  
+  # Performance settings
+  SPACK_CI_MAX_PARALLEL_JOBS: "${MAX_PARALLEL_JOBS}"
+  SPACK_CI_JOB_TIMEOUT: "${JOB_TIMEOUT}"
+
+# Spack CI job templates with GitLab-specific optimizations
+.spack_ci_job: &spack_ci_job
+  stage: build-packages
+  variables:
+    SPACK_CONCRETE_ENV_DIR: "${CI_PROJECT_DIR}/jobs_scratch_dir/${CI_JOB_NAME}"
+    SPACK_JOB_LOG_DIR: "${CI_PROJECT_DIR}/logs"
+    SPACK_JOB_TEST_LOG_DIR: "${CI_PROJECT_DIR}/test_logs"
+  before_script:
+    - echo "=== Spack CI Job Setup ==="
+    - echo "Job: ${CI_JOB_NAME}"
+    - echo "Stage: ${CI_JOB_STAGE}"
+    - echo "Runner: ${CI_RUNNER_DESCRIPTION:-unknown}"
+    - echo "Concrete env: ${SPACK_CONCRETE_ENV_DIR}"
+    
+    # Set up Spack
+    - export SPACK_ROOT=${SPACK_ROOT}
+    - export PATH="${SPACK_ROOT}/bin:${PATH}"
+    - source ${SPACK_ROOT}/share/spack/setup-env.sh
+    - spack --version
+    
+    # Create working directories
+    - mkdir -p ${SPACK_JOB_LOG_DIR} ${SPACK_JOB_TEST_LOG_DIR}
+    - mkdir -p ${SPACK_CONCRETE_ENV_DIR}
+    
+    # Set up build cache if configured
+    - |
+      if [ -n "${BUILDCACHE_DESTINATION:-}" ]; then
+        echo "Setting up build cache: ${BUILDCACHE_DESTINATION}"
+        spack mirror add buildcache ${BUILDCACHE_DESTINATION} || true
+        spack buildcache keys --install --trust || true
+      fi
+    
+    # Activate environment
+    - cd ${SPACK_CONCRETE_ENV_DIR}
+    - spack env activate --without-view .
+    - spack concretize -f
+    
+    # Show environment status
+    - spack find
+    - spack graph --installed || true
+    
+  script:
+    - echo "=== Starting Spack Install ==="
+    - echo "Installing packages for job: ${CI_JOB_NAME}"
+    
+    # Install with detailed logging
+    - |
+      spack install \
+        --fail-fast \
+        --verbose \
+        --log-file ${SPACK_JOB_LOG_DIR}/${CI_JOB_NAME}.log \
+        --log-format junit \
+        --keep-stage 2>&1 | tee ${SPACK_JOB_LOG_DIR}/${CI_JOB_NAME}_output.log
+    
+    # Test installed packages
+    - echo "=== Testing Installed Packages ==="
+    - spack find --loaded
+    - |
+      # Run basic tests on installed packages
+      for spec in $(spack find --format "{name}"); do
+        echo "Testing package: $spec"
+        spack test run --alias ${CI_JOB_NAME}_${spec} $spec || true
+      done
+    
+  after_script:
+    - echo "=== Spack CI Job Cleanup ==="
+    
+    # Create build cache entry if successful
+    - |
+      if [ "${CI_JOB_STATUS}" = "success" ] && [ -n "${BUILDCACHE_DESTINATION:-}" ]; then
+        echo "Creating build cache entries..."
+        spack buildcache create \
+          --allow-root \
+          --unsigned \
+          ${BUILDCACHE_DESTINATION} \
+          $(spack find --format "/{hash}")
+      fi
+    
+    # Clean up build artifacts but keep logs
+    - spack clean -s || true
+    - spack clean -d || true
+    
+    # Show final status
+    - echo "Job status: ${CI_JOB_STATUS:-unknown}"
+    - echo "Build directory size:"
+    - du -sh ${SPACK_CONCRETE_ENV_DIR} || true
+    
+  artifacts:
+    when: always
+    expire_in: 3 days
+    paths:
+      - logs/
+      - test_logs/
+      - jobs_scratch_dir/${CI_JOB_NAME}/
+    reports:
+      junit: logs/${CI_JOB_NAME}.xml
+      
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+      
+  timeout: ${JOB_TIMEOUT}
+  interruptible: true
+
+# Rocky Linux 8 specific configuration
+.rocky8_spack_job: &rocky8_spack_job
+  <<: *spack_ci_job
+  image: "registry.spack.io/spack/rocky8-runner:latest"
+  tags:
+    - spack
+    - rocky8
+    - linux
+  variables:
+    SPACK_TARGET_PLATFORM: "rocky8"
+    SPACK_TARGET_OS: "rocky8"
+
+# Rocky Linux 9 specific configuration  
+.rocky9_spack_job: &rocky9_spack_job
+  <<: *spack_ci_job
+  image: "registry.spack.io/spack/rocky9-runner:latest"
+  tags:
+    - spack
+    - rocky9
+    - linux
+  variables:
+    SPACK_TARGET_PLATFORM: "rocky9"
+    SPACK_TARGET_OS: "rocky9"
+
+# Compiler-specific job configurations
+.gcc8_spack_job: &gcc8_spack_job
+  variables:
+    SPACK_COMPILER_SPEC: "gcc@8.5.0"
+
+.gcc11_spack_job: &gcc11_spack_job  
+  variables:
+    SPACK_COMPILER_SPEC: "gcc@11.4.1"
+
+.intel_spack_job: &intel_spack_job
+  variables:
+    SPACK_COMPILER_SPEC: "intel-oneapi-compilers"
+
+# MPI-specific configurations
+.openmpi_job: &openmpi_job
+  variables:
+    SPACK_MPI_PROVIDER: "openmpi"
+
+.mpich_job: &mpich_job
+  variables:
+    SPACK_MPI_PROVIDER: "mpich"
+
+.intel_mpi_job: &intel_mpi_job
+  variables:
+    SPACK_MPI_PROVIDER: "intel-oneapi-mpi"
+
+# Build cache job for creating and updating cache
+create-buildcache:
+  <<: *spack_ci_job
+  stage: deploy
+  script:
+    - echo "=== Creating Build Cache ==="
+    - cd environments/${SPACK_ENVIRONMENT}
+    - spack env activate .
+    - |
+      # Create build cache for all installed packages
+      spack buildcache create \
+        --allow-root \
+        --unsigned \
+        ${BUILDCACHE_DESTINATION} \
+        $(spack find --format "/{hash}")
+    - spack buildcache update-index ${BUILDCACHE_DESTINATION}
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+  when: manual
+
+# Package signing job (for production use)
+sign-packages:
+  <<: *spack_ci_job
+  stage: deploy
+  image: "registry.spack.io/spack/notary:latest"
+  tags:
+    - spack
+    - protected
+    - signing
+  before_script:
+    - !reference [.spack_ci_job, before_script]
+    - echo "Setting up package signing..."
+    - |
+      if [ -n "${SPACK_SIGNING_KEY:-}" ]; then
+        echo "${SPACK_SIGNING_KEY}" | base64 -d | gpg --import
+      fi
+  script:
+    - echo "=== Signing Packages ==="
+    - |
+      # Sign all packages in build cache
+      spack buildcache create \
+        --allow-root \
+        ${BUILDCACHE_DESTINATION} \
+        $(spack find --format "/{hash}")
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $SPACK_SIGNING_KEY
+    - if: $CI_COMMIT_TAG && $SPACK_SIGNING_KEY
+  when: manual
