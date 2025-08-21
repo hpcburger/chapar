@@ -1,51 +1,50 @@
-# IDE and Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Ignore everything by default
+*
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# Exceptions - files and directories to include
+!README.md
+!.gitignore
+!.gitlab-ci.yml
+!.github/
 
-# Spack build artifacts and caches
-spack-stage/
-.spack/
-**/spack-stage/
-**/cache/
-**/ccache/
+# Environment configurations
+!environments/
+environments/skipper/spack.yaml
+environments/test/spack.yaml
+!environments/automated/
 
-# Container build artifacts
-containers/*.sif
-containers/*.img
-containers/cache/
-containers/tmp/
+# Specs and configuration
+!specs/
+!specs/config.yaml
+!specs/global.yaml
+!specs/compilers.yaml
 
-# Temporary and log files
-*.log
-*.tmp
-*.temp
-/tmp/
-build/
-dist/
+# Container definitions and build scripts
+!containers/
+containers/rocky8/skipper-rocky8.def
+containers/rocky9/skipper-rocky9.def
+containers/scripts/build-containers.sh
+containers/Makefile
+containers/README.md
 
-# Python artifacts (if any)
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.env
+# CI/CD configuration
+!ci/
+ci/gitlab/variables.yml
+ci/gitlab/setup-spack.sh
+ci/gitlab/build-container.sh
+ci/gitlab/spack-ci-config.yml
+ci/gitlab/spack-ci-template.yml
+ci/gitlab/README.md
+ci/github/variables.yml
+ci/github/setup-spack.sh
+ci/github/build-container.sh
+ci/github/action-template.yml
+ci/github/README.md
+ci/README.md
 
-# Backup files
-*.bak
-*.backup
-*.orig
+# GitHub Actions workflows
+!.github/workflows/
+.github/workflows/spack-ci.yml
+.github/workflows/container-build.yml
+.github/workflows/test-environment.yml
+.gitlab-ci.yml
